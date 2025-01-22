@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import {
   BrowserRouter as Router,
@@ -16,22 +16,61 @@ import "./App.css";
 import { AuthContext } from "./shared/context/auth-context";
 import { useCallback } from "react";
 
-const App = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userId,setUserId] = useState(false);
 
-  const login = useCallback((uid) => {
-    setIsLoggedIn(true);
+
+let logoutTimer;
+
+const App = () => {
+  const [token, setToken] = useState(false);
+  const [tokenExpirationDate, setTokenExpirationDate] = useState();
+  const [userId, setUserId] = useState(false);
+
+  const login = useCallback((uid, token, expirationDate) => {
+    setToken(token);
     setUserId(uid);
+    const tokenExpirationDate =
+      expirationDate || new Date(new Date().getTime() + 1000 * 60 * 60);
+    setTokenExpirationDate(tokenExpirationDate);
+    localStorage.setItem(
+      'userData',
+      JSON.stringify({
+        userId: uid,
+        token: token,
+        expiration: tokenExpirationDate.toISOString()
+      })
+    );
   }, []);
+
   const logout = useCallback(() => {
-    setIsLoggedIn(false);
+    setToken(null);
+    setTokenExpirationDate(null);
     setUserId(null);
+    localStorage.removeItem('userData');
   }, []);
+
+  useEffect(() => {
+    if (token && tokenExpirationDate) {
+      const remainingTime = tokenExpirationDate.getTime() - new Date().getTime();
+      logoutTimer = setTimeout(logout, remainingTime);
+    } else {
+      clearTimeout(logoutTimer);
+    }
+  }, [token, logout, tokenExpirationDate]);
+
+  useEffect(() => {
+    const storedData = JSON.parse(localStorage.getItem('userData'));
+    if (
+      storedData &&
+      storedData.token &&
+      new Date(storedData.expiration) > new Date()
+    ) {
+      login(storedData.userId, storedData.token, new Date(storedData.expiration));
+    }
+  }, [login]);
 
   let routes;
 
-  if (isLoggedIn) {
+  if (token) {
     routes = (
       <Switch>
         <Route path="/" exact>
@@ -43,9 +82,9 @@ const App = () => {
         <Route path="/places/new" exact>
           <NewPlaces />
         </Route>
-        <Route path="/places/:placeId" exact>
+        <Route path="/places/:placeId">
           <UpdatePlace />
-        </Route>  
+        </Route>
         <Redirect to="/" />
       </Switch>
     );
@@ -65,9 +104,16 @@ const App = () => {
       </Switch>
     );
   }
+
   return (
     <AuthContext.Provider
-      value={{ isLoggedIn: isLoggedIn,userId:userId, login: login, logout: logout }}
+      value={{
+        isLoggedIn: !!token,
+        token: token,
+        userId: userId,
+        login: login,
+        logout: logout
+      }}
     >
       <Router>
         <MainNavigation />
@@ -78,3 +124,5 @@ const App = () => {
 };
 
 export default App;
+
+
